@@ -1,0 +1,586 @@
+---
+title: "Esame Modelli Statistici"
+author: "Nicola Zucchia"
+date: "2023-02-15"
+output:
+  html_document: default
+  pdf_document: default
+editor_options:
+  markdown:
+    wrap: 72
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Esplorazione dei dati
+
+Questo lavoro consiste nell'analisi dei dati reperibili al link
+<https://www.kaggle.com/datasets/hellbuoy/car-price-prediction?select=CarPrice_Assignment.csv>
+e la costruzione di un modello di regressione lineare multipla.
+
+Il primo passo consiste nel caricare i dati e darne una panoramica con
+le prime righe del dataset.
+
+```{r}
+d <- read.csv("R Files/CarPrice_Assignment.csv", header = TRUE)
+head(d)
+```
+
+Il dataset in questione riporta varie informazioni riguardo lo stato, le
+caratteristiche fisiche e meccaniche e il prezzo di varie vetture. Lo
+scopo di questa analisi è quella di fornire un modello di regressione
+lineare multipla che veda il prezzo come variabile risposta: si cerca
+dunque di esprimere al meglio come le altre variabili influenzino il
+prezzo.
+
+Si descrivono in sintesi le variabili contenute nel dataset:
+
+-   car_ID : variabile contatore per l'identificabilità delle righe
+    all'interno del database
+
+-   symboling : variabile segnata come numerica per indicare il livello
+    di sicurezza della vettura
+
+-   CarName : variabile qualitativa per il nome del modello di auto
+
+-   fueltype : variabile qualitativa per il tipo di combustibile
+
+-   aspiration : variabile qualitative per il tipo di aspirazione del
+    motore
+
+-   doornumber : variabile qualitativa per il numero di portiere
+    dell'auto
+
+-   carbody : variabile qualitativa per la struttura della vettura
+
+-   drivewheel : variabile qualitativa per il tipo di ruote motrici
+
+-   enginelocation : variabile qualitativa per la locazione del motore
+    nell'auto
+
+-   wheelbase : variabile quantitativa per il passo (def: distanza tra
+    gli assi)
+
+-   carlength : variabile quantitativa per la lunghezza della vettura
+
+-   carwidth : variabile quantitativa per la larghezza della vettura
+
+-   carheight : variabile quantitativa per l'altezza della vettura
+
+-   curbweight : variabiel quantitativa per il peso a vuoto della
+    vettura
+
+-   enginetype : variabile qualitativa per il tipo del motore
+
+-   cylindernumber : variabile qualitativa per il numero dei cilindri
+    del motore
+
+-   enginesize : variabile quantitativa per la grandezza del motore
+
+-   fuelsystem : variabile qualitativa per la modalità di alimentazione
+    del motore
+
+-   boreratio : variabile quantitativa per il rapporto alesaggio
+    (riguarda la dimensione del motore)
+
+-   stroke : variabile quantitativa per il movimento del pistone
+
+-   compressionratio : variabile quantitativa per il rapporto tra il
+    volume del cilindro col pistone alla base rispetto a quello alla
+    sommità
+
+-   horsepower : variabile quantitativa per il numero di cavalli
+
+-   peakrpm : variabile quantitativa per il numero massimo di giri del
+    motore
+
+-   citympg : variabile quantitativa per il consumo in città
+    (miles-per-gallon)
+
+-   highwaympg : variabile quantitativa per il consumo in autostrada
+    (miles-per-gallon)
+
+-   price : variabile quantitativa per il prezzo
+
+Ai fini dell'analisi, car_ID risulta essere inutile, di conseguenza
+viene eliminata.
+
+```{r}
+d <- d[,-c(1)]
+```
+
+Un primo accertamento che viene fatto è la verifica dell'assenza di NA.
+
+```{r}
+sum(is.na(d))
+```
+
+Un altro passaggio preliminare consiste nel trasformare le variabili
+categoriali in fattori.
+
+```{r}
+d$CarName <- as.factor(d$CarName)
+d$fueltype <- as.factor(d$fueltype)
+d$aspiration <- as.factor(d$aspiration)
+d$doornumber <- as.factor(d$doornumber)
+d$carbody <- as.factor(d$carbody)
+d$drivewheel <- as.factor(d$drivewheel)
+d$enginelocation <- as.factor(d$enginelocation)
+d$enginetype <- as.factor(d$enginetype)
+d$cylindernumber <- as.factor(d$cylindernumber)
+d$fuelsystem <- as.factor(d$fuelsystem)
+```
+
+Il dataset così ottenuto è pronto per l'analisi e della forma seguente.
+
+```{r}
+str(d)
+```
+
+Si nota come CarName abbia 147 livelli, un numero spropositato anche
+vista l'ampiezza del dataset. Viene dunque rimossa.
+
+```{r}
+d <- d[,-c(2)]
+```
+
+La variabile symboling, secondo il dizionario fornito assieme ai dati, è
+una variabile categoriale assegnata per indicare il livello di di
+sicurezza dell'auto. +3 indica maggiore rischio, -3 più sicurezza. Viene
+dunque anch'essa convertita in fattore.
+
+```{r}
+d$symboling <- as.factor(d$symboling)
+```
+
+## Analisi della variabile risposta
+
+Si desidera verificare la distribuzione di price.
+
+```{r}
+library(ggplot2)
+
+ggplot(d, aes(x = price)) + 
+ geom_histogram(aes(y = after_stat(density)), colour = "darkblue", fill = "lightblue") +
+ geom_density(alpha = .2, fill = "#FF6666") 
+
+```
+
+Chiaramente non è normale. Si procede con una trasformazione
+logaritmica.
+
+```{r}
+ggplot(d, aes(x = log(price))) + 
+ geom_histogram(aes(y = after_stat(density)), colour = "darkblue", fill = "lightblue") +
+ geom_density(alpha = .2, fill = "#FF6666")
+
+```
+
+La trasformazione logaritmica, sebbene non renda la variabile risposta
+normale, sembra perlomeno avere un comportamento più regolare e
+simmetrico. Si tenga anche presente che il dataset conta 205
+osservazioni della variabile, e quindi attendersi una forma nitida è
+improbabile.
+
+## Altre variabili
+
+Per prima cosa, si guarda alla matrice di correlazione per le variabili
+quantitative per avere un'idea di quali possano influenzare di più la
+variabile risposta e di quali possano causare multicollinearità.
+
+```{r}
+corrs <- cor(d[,c(8,9,10,11,12,15,17,18,19,20,21,22,23,24)])
+round(corrs, digits = 2)
+```
+
+Si da un'alternativa grafica di tale matrice.
+
+```{r}
+library(corrplot)
+library(RColorBrewer)
+corrplot(corrs, type="upper", order="hclust", col=brewer.pal(n = 8, name = "RdYlBu"))
+```
+
+Da questa analisi si evince come le variabili quantitative maggiormente
+correlate con price sono: enginesize, curbweight, horsepower, carwidth,
+carlength, wheelbase, boreratio (positivamente); citympg, highwaympg
+(negativamente).
+
+Si svolge un'attenta valutazione della multicollinearità.
+
+```{r}
+fitC <- lm(price ~ citympg, data=d)
+summary(fitC)
+
+fitH <- lm(price ~ highwaympg, data=d)
+summary(fitH)
+
+fitCH <- lm(price ~ citympg + highwaympg, data=d)
+summary(fitCH)
+```
+
+Si nota come l'inserimento esclusivo di una delle due variabili porti a
+un coefficiente con p-value \< 0.05 e std. error nell'ordine di 10\^-3.
+Tuttavia, l'inserimento di entrambe le variabili porta entrambi i
+coefficienti ad avere uno std. error di un ordine di grandezza
+superiorie e la significatività dei coefficienti è molto minore, essendo
+il p-value di d\$citympg addirittura \> 0.05, e l'altro anch'esso poco
+significativo. Questi sono i sintomi della multicollinearità per questa
+coppia di variabili: di conseguenza, si sceglie di escludere citympg in
+quanto leggermente meno correlata (anche se negativamente) con la
+variabile risposta e avendo essa coefficiente meno significativo nel
+modello con entrambe le esplicative.
+
+```{r}
+d <- d[,-c(22)]
+```
+
+Le altre combinazioni di variabili che possono portare a
+multicollinearità sulla base del coefficiente di correlazione lineare
+sono:
+
+-   wheelbase, carlength, carwidth e curbweight tra di loro;
+
+-   enginesize, horsepower e curbweight tra di loro;
+
+-   citympg, highwaympg e horsepower tra di loro.
+
+La presenza ridondante di curbweight e la sua alta correlazione con
+price potrebbe spiegare di per sè gran parte della variabilità senza
+però darci tante informazioni e rischiando multicollinearità con le
+altre variabili. Di conseguenza, si decide di tralasciarla. (in
+Italiano, il peso a vuoto della macchina).
+
+La presenza ridondante di curbweight e la sua alta correlazione con
+price potrebbe spiegare di per sè gran parte della variabilità senza
+però darci tante informazioni e rischiando multicollinearità con le
+altre variabili. Di conseguenza, si decide di tralasciarla. (in
+Italiano, il peso a vuoto della macchina)
+
+```{r}
+d <- d[,-c(12)]
+```
+
+Durante la costruzione dei modelli, si controllerà se verranno incluse
+più variabili che possano portare multicollinearità. In tal caso, si
+escluderà quella meno significativa.
+
+Per quanto riguarda le variabili categoriali, si esegue un ANOVA test.
+
+```{r}
+# definisco una funzione che, dato in input la variabile fattore, ritorna il p-value dell'ANOVA test
+anova.p.calc <- function(v) {
+  anova.result <- aov(d$price ~ v)
+  a.summary <- summary(anova.result)
+  p.value <- a.summary[[1]]$`Pr(>F)`[1]
+  return (p.value)
+}
+
+# applico la funzione a ogni colonna del dataset corrispondente a fattori e stampo l'indice solo se il test rifiuta l'ipotesi nulla di uguaglianza delle medie (p-value < 0.05)
+fac.vars <- c(1,2,3,4,5,6,7,12,13,15)
+sig.cat <- numeric()
+not.sig.cat <- numeric()
+for (i in fac.vars) {
+  curr.p.val <- anova.p.calc(d[,c(i)])
+  if (curr.p.val < 0.05) {
+    sig.cat <- c(sig.cat,i)
+  }
+  else {
+    not.sig.cat <- c(not.sig.cat,i)
+  }
+}
+sig.cat
+not.sig.cat
+```
+
+Elimino dal dataset le variabili categoriali non significative, onde
+evitare rumore nella costruzione del modello.
+
+```{r}
+d <- d[,-c(not.sig.cat)]
+```
+
+Si propone un boxplot delle categoriali che influenzano
+significativamente il modello.
+
+Si nota come nei boxplot delle ultime tre variabili risultino presenti
+dei livelli con un numero molto basso di osservazioni: questo nel
+modello potrebbe portare risultati inaffidabili. Si osservano le tabelle
+relative e si decide cosa farne.
+
+```{r}
+table(d$enginetype)
+table(d$cylindernumber)
+table(d$fuelsystem)
+```
+
+Si procede eliminando le righe dei livelli contenenti una sola
+osservazione. Si elimina anche "two" per cylindernumber, altrimenti i
+modelli lineari computano un NA come coefficiente per quel livello.
+
+```{r}
+d <- d[d$enginetype != "dohcv", ]
+d <- d[d$cylindernumber != "three", ]
+d <- d[d$cylindernumber != "twelve", ]
+d <- d[d$cylindernumber != "two", ]
+d <- d[d$fuelsystem != "mfi", ]
+d <- d[d$fuelsystem != "spfi", ]
+d$enginetype <- droplevels(d$enginetype)
+d$cylindernumber <- droplevels(d$cylindernumber)
+d$fuelsystem <- droplevels(d$fuelsystem)
+```
+
+Vediamo come sono ora i boxplot.
+
+```{r}
+par(mfrow=c(3,3))
+ggplot(d, aes(x = symboling, y = price, fill = symboling)) +
+       geom_boxplot( )
+ggplot(d, aes(x = aspiration, y = price, fill = aspiration)) +
+       geom_boxplot( )
+ggplot(d, aes(x = carbody, y = price, fill = carbody)) +
+       geom_boxplot( )
+ggplot(d, aes(x = drivewheel, y = price, fill = drivewheel)) +
+       geom_boxplot( )
+ggplot(d, aes(x = enginelocation, y = price, fill = enginelocation)) +
+       geom_boxplot( )
+ggplot(d, aes(x = enginetype, y = price, fill = enginetype)) +
+       geom_boxplot( )
+ggplot(d, aes(x = cylindernumber, y = price, fill = cylindernumber)) +
+       geom_boxplot( )
+ggplot(d, aes(x = fuelsystem, y = price, fill = fuelsystem)) +
+       geom_boxplot( )
+```
+
+Alcuni livelli potrebbero essere assimilabili a causa della loro media
+che sembra statisticamente uguale. Si fa un ANOVA per verificarlo.
+Questo potrebbe semplificare decisamente la formulazione del modello e
+ridurre il numero di coefficienti significativi.
+
+```{r}
+d$symboling2 <- d$symboling
+levels(d$symboling2) <- c("<0", "<0", "0", "<3", "<3", "3")
+fit.symboling <- lm(price ~ symboling, data = d)
+fit.symboling2 <- lm(price ~ symboling2, data = d)
+anova(fit.symboling2,fit.symboling)
+```
+
+Il test suggerisce che non c'è evidenza per concludere che le medie dei
+gruppi siano diverse.
+
+```{r}
+d$carbody2 <- d$carbody
+levels(d$carbody2) <- c("ch", "ch", "h", "sw", "sw")
+fit.carbody <- lm(price ~ carbody, data=d)
+fit.carbody2 <- lm(price ~ carbody2, data=d)
+anova(fit.carbody2,fit.carbody)
+```
+
+Anche qui il test porta a considerare la nuova variabile.
+
+```{r}
+d$drivewheel2 <- d$drivewheel
+levels(d$drivewheel2) <- c("4f", "4f", "r")
+fit.drivewheel <- lm(price ~ drivewheel, data=d)
+fit.drivewheel2 <- lm(price ~ drivewheel2, data=d)
+anova(fit.drivewheel2,fit.drivewheel)
+```
+
+```{r}
+d$enginetype2 <- d$enginetype
+levels(d$enginetype2) <- c("dl", "dl", "ohc", "ohc", "ohcv")
+fit.enginetype <- lm(price ~ enginetype, data=d)
+fit.enginetype2 <- lm(price ~ enginetype2, data=d)
+anova(fit.enginetype2, fit.enginetype)
+```
+
+```{r}
+d$cylindernumber2 <- d$cylindernumber
+levels(d$cylindernumber2) <- c("eight", "fivesix", "four", "fivesix")
+fit.cylindernumber <- lm(price ~ cylindernumber, data=d)
+fit.cylindernumber2 <- lm(price ~ cylindernumber2, data=d)
+anova(fit.cylindernumber2,fit.cylindernumber)
+```
+
+```{r}
+d$fuelsystem2 <- d$fuelsystem
+levels(d$fuelsystem2) <- c("12", "12", "im", "im", "s")
+fit.fuelsystem <- lm(price ~ fuelsystem, data=d)
+fit.fuelsystem2 <- lm(price ~ fuelsystem2, data=d)
+anova(fit.fuelsystem2,fit.fuelsystem)
+```
+
+Tutti i test ci hanno portato ad assumere un numero minore di livelli
+(che diventano dunque anche più popolati e quindi fornenti risultati
+sperabilmente più stabili).
+
+L'ultimo passo preparatorio è dunque rimuovere le variabili originali.
+
+```{r}
+d$symboling <- d$symboling2
+d$carbody <- d$carbody2
+d$drivewheel <- d$drivewheel2
+d$enginetype <- d$enginetype2
+d$cylindernumber <- d$cylindernumber2
+d$ fuelsystem <- d$fuelsystem2
+d <- d[,-c(21,22,23,24,25,26)]
+```
+
+## Formulazione del modello
+
+Si definisce il modello con tutte le variabili come esplicative, si
+userà per lo scope nella stepwise regression tramite metrica AIC.
+
+```{r}
+fitAll <- lm(price ~ ., data=d)
+summary(fitAll)
+```
+
+```{r}
+par(mfrow=c(2,2))
+plot(fitAll)
+```
+
+Risulta evidente nel grafico dei residui come siano violate le ipotesi
+di normalità, omoschedasticità e linearità. Si vede come sia necessaria
+una trasformazione.
+
+```{r}
+fitAllLog <- lm(log(price) ~ ., data=d)
+summary(fitAllLog)
+```
+
+```{r}
+par(mfrow=c(2,2))
+plot(fitAllLog)
+```
+
+I residui del modello con le stesse esplicative per la trasformata
+logaritmica del prezzo risultano invece fedeli alle ipotesi del modello.
+
+Si cerca con StepAIC un modello valido con meno esplicative.
+
+```{r}
+require(MASS)
+fitEmpty <- lm(price ~ 1, data=d)
+fitAIC <- stepAIC(fitEmpty, scope=formula(fitAll), direction="both")
+```
+
+```{r}
+summary(fitAIC)
+```
+
+```{r}
+par(mfrow=c(2,2))
+plot(fitAIC)
+```
+
+Si osserva che carbody non sembra significativa
+
+```{r}
+fitNew <- lm(price ~ enginesize + enginelocation + carwidth + 
+    stroke + enginetype + boreratio + drivewheel + peakrpm + 
+    aspiration + fuelsystem + cylindernumber, data=d)
+summary(fitNew)
+```
+
+```{r}
+par(mfrow=c(2,2))
+plot(fitNew)
+```
+
+Si cerca una trasformazione.
+
+```{r}
+fitNewLog <- lm(log(price) ~ enginesize + enginelocation + carwidth + 
+    stroke + enginetype + boreratio + drivewheel + peakrpm + 
+    aspiration + fuelsystem + cylindernumber, data=d)
+summary(fitNewLog)
+```
+
+```{r}
+par(mfrow=c(2,2))
+plot(fitNewLog)
+```
+
+I risultati rispettano le ipotesi di normalità e linearità, mentre
+appare esserci eteroschedasticità e correlazione tra i residui.
+
+Si vuole tentare una via più efficiente targetizzando da subito il
+log(price) invece che price.
+
+```{r}
+fit0 <- lm(log(price) ~ ., data=d)
+fit1 <- lm(log(price) ~ 1, data=d)
+fit2 <- stepAIC(fit1, scope=formula(fit0), direction="both")
+```
+
+```{r}
+summary(fit2)
+```
+
+```{r}
+par(mfrow=c(2,2))
+plot(fit2)
+```
+
+I risultati sembrano decisamente migliorati.
+
+Possibili multicollinearità: horsepower e enginesize. Si rimuove
+horsepower in virtù del fatto che è meno correlata con price.
+
+```{r}
+fit3 <- lm(log(price) ~ enginesize + fuelsystem + 
+    carwidth + carbody + enginetype + drivewheel + symboling + 
+    compressionratio + stroke + boreratio + highwaympg, data=d)
+summary(fit3)
+```
+
+```{r}
+par(mfrow=c(2,2))
+plot(fit3)
+```
+
+Ancora una volta carbody non è significativa nel modello.
+
+```{r}
+fit4 <- lm(log(price) ~ enginesize + fuelsystem + 
+    carwidth + enginetype + drivewheel + symboling + 
+    stroke + boreratio + highwaympg, data=d)
+summary(fit4)
+```
+
+```{r}
+par(mfrow=c(2,2))
+plot(fit4)
+```
+
+Le variabili stroke e boreratio sono poco correlate con price, sebbene
+la loro significatività nel modello si decide di toglierle per ridurre
+la complessità del modello.
+
+```{r}
+fit5 <- lm(log(price) ~ enginesize + fuelsystem + carwidth + 
+    enginetype + drivewheel + symboling + 
+    highwaympg, data = d)
+summary(fit5)
+```
+
+```{r}
+par(mfrow=c(2,2))
+plot(fit5)
+```
+
+```{r}
+shapiro.test(fit5$residuals)
+```
+
+## Conclusioni
+
+Il modello lineare ottenuto con fit5 appare soddisfacente: i residui
+rispettano le ipotesi, l'R\^2 è dell'87% e gli standard error sono
+bassi. Si propone come modello interpretativo per il prezzo delle auto,
+tuttavia si consiglia di ampliare il dataset con nuove osservazioni per
+validare i risultati ottenuti.
